@@ -1,0 +1,1224 @@
+/*
+ * IRremote: IRrecvDemo - demonstrates receiving IR codes with IRrecv
+ * An IR detector/demodulator must be connected to the input RECV_PIN.
+ * Version 0.1 July, 2009
+ * Copyright 2009 Ken Shirriff
+ * http://arcfn.com
+ */
+
+#include <IRremote.h>
+#include <LiquidCrystal.h>
+
+// initialize the library with the numbers of the interface pins
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+
+
+int RECV_PIN = 11;
+
+IRrecv irrecv(RECV_PIN);
+
+decode_results results;
+
+// led channels intensity EEPROM
+byte ch1[24][4], ch2[24][4],ch3[24][4],ch4[24][4];
+
+// global variable for setup use and reading
+int hr,mn,dd,mm,yy;
+
+// manual intensity eeprom
+byte man_ch1, man_ch2, man_ch3, man_ch4;
+
+// manual auto switch eeprom
+byte switch_man_auto; 
+
+//char blank line
+char blank_line[]="               ";
+
+// on hold screen shows few minutes till multiple of 5, time, date, time , day
+// 2 channels at a time, scroll with above
+
+// LCD On when button press and off at 10sec of no function
+//Mute level controlled by transistor and on off only as PWM not wasted(if possible only) 
+
+
+//on menu button menu shows, line 1, dtime, line 2 auto
+//up down of channel scrolls the menu
+//
+
+// Channel 1, Channel 2 selection also scrolls
+
+// hour 1, hour 2 also scrolls
+
+
+// 1 menu
+void f_menu()
+{
+  char line1[]="1.Time and date ";
+  char line2[]="2.Light levels";
+  char line3[]="3.Manual mode";
+
+  byte instance_scroll=1, instance_scroll_prev=0; 
+  byte pressed=0, pressed_bef=0;
+  byte blink_delay=0;
+  byte blink_now=1;
+
+  Serial.println("was here");
+
+  while(pressed != 7)
+  {
+
+    /*
+    blink_delay=millis()%10000;
+     blink_delay= blink_delay/1000;
+     blink_now=blink_delay % 2;
+     */
+
+    if(instance_scroll != instance_scroll_prev) // display on LED to change only on change in scroll
+    {
+      switch (instance_scroll) {
+      case 1:   
+        //1st instance 
+        //line 1 Time and date
+        //line 2 Automatic mode
+        //      Serial.println("inst1");
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          lcd.print(line1);
+        else
+          lcd.print(blank_line);
+
+        Serial.println("L1");
+        Serial.println(line1);
+        lcd.setCursor(0, 1);
+        Serial.println("L2");
+        Serial.println(line2);
+        lcd.print(line2);
+        break;
+      case 2:   
+        //2nd instance
+        //line 1 Automatic mode
+        //linen 2 Manual mode
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          lcd.print(line2);
+        else
+          lcd.print(blank_line);
+        Serial.println("L2");
+        Serial.println(line2);
+        lcd.setCursor(0, 1);
+        lcd.print(line3);
+        Serial.println("L3");
+        Serial.println(line3);
+        break;
+case 3:    
+         //3rd instance
+         // line 1 Manual mode
+         // line 2 Time and date
+         //      Serial.println("inst3");
+         lcd.setCursor(0, 0);
+         if(blink_now ==1)
+         lcd.print(line3);
+         else
+         lcd.print(blank_line);
+         Serial.println("L3");
+         Serial.println(line3);
+         lcd.setCursor(0, 1);
+         lcd.print(line1);
+         Serial.println("L1");
+         Serial.println(line1);
+         break; 
+      }
+      instance_scroll_prev=instance_scroll;
+    }
+
+    if (irrecv.decode(&results)) 
+    {
+      Serial.println("got some ");
+      Serial.println(results.value);
+      delay(100);
+      pressed_bef=pressed;
+      pressed=f_button_pressed();
+      if (pressed==0)
+        pressed= pressed_bef;
+      else
+      {
+        if(pressed==2)
+          instance_scroll++;
+        if(pressed==3)
+          instance_scroll--;
+
+        if (instance_scroll>3)//limiting to 2 as only 2 lines of menu now
+          instance_scroll=1;          
+        if (instance_scroll<1)
+          instance_scroll=3;
+        Serial.print("pressed now-");
+        Serial.println(pressed);
+        Serial.print("instance_scroll");
+        Serial.println(instance_scroll);
+      }
+
+      irrecv.resume(); // Receive the next value
+    }
+
+
+    //go to next lower menu if menu is pressed again
+    if(pressed == 1)
+    {
+      //go to first function
+      if(instance_scroll ==1)
+        menu_date_time();
+      if(instance_scroll ==2)
+        menu_auto();
+      if(instance_scroll ==3)
+        menu_manual();
+      instance_scroll_prev=0;// so that we get switch display
+      pressed =2;// so that we dont get into this if again
+    }
+
+  }
+
+}
+// 1.1 Date and time
+// 1.1.1 hour
+// 1.1.2 minute
+// 1.1.3 day
+// 1.1.4 month
+// 1.1.5 year
+
+void menu_date_time()
+{
+  char line1[9]="Hour:   ";
+  char line2[9]="Minute: ";
+  char line3[9]="Day:    ";
+  char line4[9]="Month:  ";
+  char line5[9]="Year    ";
+  char buffer_1[16];
+
+
+  byte instance_scroll=1,instance_scroll_prev=0; 
+  byte pressed=0, pressed_bef=0;
+  byte blink_delay=0;
+  byte blink_now=1;
+
+  int hour, minute, second,day,month, year;
+  //same as above data
+  byte date_time_var[6];
+
+  date_time_var[0]=0;
+  date_time_var[1]=0;
+  date_time_var[2]=0;
+  date_time_var[3]=0;
+  date_time_var[4]=0;
+
+
+
+  while(pressed !=7)
+  {
+
+    if(instance_scroll != instance_scroll_prev)
+    {
+      switch (instance_scroll) {
+      case 1:   
+        //1st instance 
+
+        //display line 1 blinking
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          sprintf(buffer_1,"%s%d",line1,date_time_var[instance_scroll - 1]);
+        else
+          sprintf(buffer_1," ");
+        lcd.setCursor(0, 0);
+        lcd.print(buffer_1);
+        Serial.println("L1");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+
+
+        //display line 2 constant
+        sprintf(buffer_1,"%s%d",line2,date_time_var[instance_scroll ]);
+        lcd.setCursor(0, 1);
+        lcd.print(buffer_1);
+        Serial.println("L2");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+        break;
+
+      case 2:   
+        //1st instance 
+
+        //display line 1 blinking
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          sprintf(buffer_1,"%s%d",line2,date_time_var[instance_scroll - 1]);
+        else
+          sprintf(buffer_1," ");
+        Serial.println("L2");
+        Serial.println(buffer_1);
+        lcd.setCursor(0, 0);
+        lcd.print(buffer_1);
+        sprintf(buffer_1," ");
+
+        //display line 2 constant
+        sprintf(buffer_1,"%s%d",line3,date_time_var[instance_scroll ]);
+        lcd.setCursor(0, 1);
+        lcd.print(buffer_1);
+        Serial.println("L3");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+        break;
+
+      case 3:   
+        //1st instance 
+
+        //display line 1 blinking
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          sprintf(buffer_1,"%s%d",line3,date_time_var[instance_scroll - 1]);
+        else
+          sprintf(buffer_1," ");
+        Serial.println("L3");
+        Serial.println(buffer_1);
+        lcd.setCursor(0, 0);
+        lcd.print(buffer_1);
+        sprintf(buffer_1," ");
+
+        //display line 2 constant
+        sprintf(buffer_1,"%s%d",line4,date_time_var[instance_scroll ]);
+        lcd.setCursor(0, 1);
+        lcd.print(buffer_1);
+        Serial.println("L4");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+
+        break;
+
+      case 4:   
+        //1st instance 
+
+        //display line 1 blinking
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          sprintf(buffer_1,"%s%d",line4,date_time_var[instance_scroll - 1]);
+        else
+          sprintf(buffer_1," ");
+
+        lcd.setCursor(0, 0);
+        lcd.print(buffer_1);
+        Serial.println("L4");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+
+        //display line 2 constant
+        sprintf(buffer_1,"%s%d",line5,date_time_var[instance_scroll ]);
+        lcd.setCursor(0, 1);
+        lcd.print(buffer_1);
+        Serial.println("L5");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+
+        break;
+
+      case 5:   
+        //1st instance 
+
+        //display line 1 blinking
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          sprintf(buffer_1,"%s%d",line5,date_time_var[instance_scroll - 1]);
+        else
+          sprintf(buffer_1," ");
+        Serial.println("L5");
+        Serial.println(buffer_1);
+        lcd.setCursor(0, 0);
+        lcd.print(buffer_1);
+        sprintf(buffer_1," ");
+
+        //display line 2 constant
+        sprintf(buffer_1,"%s%d",line1,date_time_var[0]);
+        lcd.setCursor(0, 1);
+        lcd.print(buffer_1);
+        Serial.println("L1");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+
+        break;
+
+      }
+      instance_scroll_prev=instance_scroll;
+    }
+
+    if (irrecv.decode(&results)) 
+    {
+      Serial.println("got some ");
+      Serial.println(results.value);
+      delay(100);
+      pressed_bef=pressed;
+      pressed=f_button_pressed();
+
+
+      if (pressed==0)
+        pressed= pressed_bef;
+      else
+      {
+        //scroll check
+        if(pressed==2)
+          instance_scroll++;
+        if(pressed==3)
+          instance_scroll--;
+
+        if (instance_scroll>5)
+          instance_scroll=1;          
+        if (instance_scroll<1)
+          instance_scroll=5;
+
+
+        if ( pressed >=4 && pressed <=5) 
+        {
+          Serial.println("incri decri here ");
+          //increment check  
+          if(pressed==4)
+            date_time_var[instance_scroll - 1]++;
+          if(pressed==5)
+            date_time_var[instance_scroll - 1]--;          
+
+
+          // checking limits during value change
+          if(instance_scroll == 1)//hour
+          {
+            if( date_time_var[instance_scroll- 1] > 23 )
+              date_time_var[instance_scroll-1]=0;
+            if( date_time_var[instance_scroll -1] < 0)
+              date_time_var[instance_scroll -1]=23;
+          }
+          if(instance_scroll == 2)//minutes
+          {
+            if( date_time_var[instance_scroll- 1] > 59)
+              date_time_var[instance_scroll- 1]=0;
+            if( date_time_var[instance_scroll- 1] < 0)
+              date_time_var[instance_scroll- 1]=59;
+          }
+          if(instance_scroll == 3)//day
+          {
+            if( date_time_var[instance_scroll- 1] > 31)
+              date_time_var[instance_scroll- 1]=1;
+            if( date_time_var[instance_scroll- 1] <1 )
+              date_time_var[instance_scroll- 1]=31;
+          }
+          if(instance_scroll == 4)//month
+          {
+            if( date_time_var[instance_scroll- 1] > 12)
+              date_time_var[instance_scroll- 1]=1;
+            if( date_time_var[instance_scroll- 1] < 1)
+              date_time_var[instance_scroll- 1]=12;
+          }
+          if(instance_scroll == 5)//year
+          {
+            if( date_time_var[instance_scroll- 1] > 99 )
+              date_time_var[instance_scroll- 1]=13;
+            if( date_time_var[instance_scroll- 1] < 13)
+              date_time_var[instance_scroll- 1]=99;
+          }
+          instance_scroll_prev=0;
+        }
+
+
+
+        Serial.print("pressed now-");
+        Serial.println(pressed);
+        Serial.print("instance_scroll");
+        Serial.println(instance_scroll);
+      }
+
+
+
+
+      irrecv.resume(); // Receive the next value
+    }
+
+  }
+
+
+
+}
+
+// 1.2 Auto LED
+// 1.2.1 channel select
+void menu_auto()
+{
+  char line1[10]="Channel-1";
+  char line2[10]="Channel-2";
+  char line3[10]="Channel-3";
+  char line4[10]="Channel-4";
+
+  char buffer_1[16];
+
+
+  byte instance_scroll=1,instance_scroll_prev=0; 
+  byte pressed=0, pressed_bef=0;
+  byte blink_delay=0;
+  byte blink_now=1;
+  //byte auto_var[6];
+
+  while(pressed !=7)
+  {
+
+    if(instance_scroll != instance_scroll_prev)
+    {
+      switch (instance_scroll) {
+      case 1:   
+        //1st instance 
+
+        //display line 1 blinking
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          sprintf(buffer_1,"%s",line1);
+        else
+          sprintf(buffer_1," ");
+        lcd.setCursor(0, 0);
+        lcd.print(buffer_1);
+        Serial.println("L1");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+
+
+        //display line 2 constant
+        sprintf(buffer_1,"%s",line2);
+        lcd.setCursor(0, 1);
+        lcd.print(buffer_1);
+        Serial.println("L2");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+        break;
+
+      case 2:   
+        //1st instance 
+
+        //display line 1 blinking
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          sprintf(buffer_1,"%s",line2);
+        else
+          sprintf(buffer_1," ");
+        Serial.println("L2");
+        Serial.println(buffer_1);
+        lcd.setCursor(0, 0);
+        lcd.print(buffer_1);
+        sprintf(buffer_1," ");
+
+        //display line 2 constant
+        sprintf(buffer_1,"%s",line3);
+        lcd.setCursor(0, 1);
+        lcd.print(buffer_1);
+        Serial.println("L3");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+        break;
+
+      case 3:   
+        //1st instance 
+
+        //display line 1 blinking
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          sprintf(buffer_1,"%s",line3);
+        else
+          sprintf(buffer_1," ");
+        Serial.println("L3");
+        Serial.println(buffer_1);
+        lcd.setCursor(0, 0);
+        lcd.print(buffer_1);
+        sprintf(buffer_1," ");
+
+        //display line 2 constant
+        sprintf(buffer_1,"%s",line4);
+        lcd.setCursor(0, 1);
+        lcd.print(buffer_1);
+        Serial.println("L4");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+
+        break;
+
+      case 4:   
+        //1st instance 
+
+        //display line 1 blinking
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          sprintf(buffer_1,"%s",line4);
+        else
+          sprintf(buffer_1," ");
+
+        lcd.setCursor(0, 0);
+        lcd.print(buffer_1);
+        Serial.println("L4");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+
+        //display line 2 constant
+        sprintf(buffer_1,"%s",line1);
+        lcd.setCursor(0, 1);
+        lcd.print(buffer_1);
+        Serial.println("L1");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+
+        break;
+
+      }
+      instance_scroll_prev=instance_scroll;
+    }
+
+    if (irrecv.decode(&results)) 
+    {
+      Serial.println("got some ");
+      Serial.println(results.value);
+      delay(100);
+      pressed_bef=pressed;
+      pressed=f_button_pressed();
+
+
+      if (pressed==0)
+        pressed= pressed_bef;
+      else
+      {
+        //scroll check
+        if(pressed==2)
+          instance_scroll++;
+        if(pressed==3)
+          instance_scroll--;
+
+        if (instance_scroll>4)
+          instance_scroll=1;          
+        if (instance_scroll<1)
+          instance_scroll=4;
+
+
+        Serial.print("pressed now-");
+        Serial.println(pressed);
+        Serial.print("instance_scroll");
+        Serial.println(instance_scroll);
+      }
+
+      irrecv.resume(); // Receive the next value
+    }
+
+    //go to next lower menu if menu is pressed agaien, i.e. to minute level intensity
+    if(pressed == 1)
+    {
+      //go to  function
+      menu_auto_channel(instance_scroll);
+      instance_scroll_prev=0;// so that we get switch display
+      pressed =2;// so that we dont get into this if again
+    }
+
+  }
+
+
+
+}
+
+// 1.2..1.1 0-15min, 15min-30min.....etc<scroll up and down from 00-23hrs> intensity
+void menu_auto_channel(int channel_no)
+{
+
+  char line1[11]="Time     =";
+  char line2[11]="Intensity=";
+  char buffer_1[16];
+
+
+  byte instance_scroll=1,instance_scroll_prev=0; 
+  byte pressed=0, pressed_bef=0;
+  byte blink_delay=0;
+  byte blink_now=1;
+  //byte auto_var[6];
+  byte k,i,j,l;
+  // hours, minutes X every 15 minutes, so = 4 X 24 entries of time and values
+  // hours
+  byte auto_hr_var[96];
+  byte auto_mn_var[96];
+  byte auto_inten_var[96]; // only these will be saved
+
+  /*
+  l=0; 
+   for(j=0;j<24;j++)
+   {
+   for (i=0; i<4 ; i++)
+   {
+   auto_hr_var[l]= value from memory;
+   l++;
+   }
+   k++;
+   }
+   */
+
+  //setting up hours and minutes
+
+
+  k=0;
+  l=0; 
+  for(j=0;j<24;j++)
+  {
+    for (i=0; i<4 ; i++)
+    {
+      auto_hr_var[l]=k;
+      l++;
+    }
+    k++;
+  }
+
+
+  l=0;
+  for(j=0;j<24;j++)
+  {
+    k=0; 
+    for (i=0; i<4 ; i++)
+    {
+      auto_mn_var[l]=k*15;
+      l++;
+      k++;
+    }
+  }
+
+
+  while(pressed !=7)
+  {
+
+    if(instance_scroll != instance_scroll_prev)
+    {
+      //display line 1 blinking
+      //1st instance 
+
+      lcd.setCursor(0, 0);
+      if(blink_now ==1)
+        sprintf(buffer_1,"%s%d:%d",line1,auto_hr_var[instance_scroll - 1],auto_mn_var[instance_scroll - 1]);
+      else
+        sprintf(buffer_1," ");
+      lcd.setCursor(0, 0);
+      lcd.print(buffer_1);
+      Serial.println("L1");
+      Serial.println(buffer_1);
+      sprintf(buffer_1," ");
+
+
+      //display line 2 constant
+      sprintf(buffer_1,"%s%d %",line2,auto_inten_var[instance_scroll -1]);
+      lcd.setCursor(0, 1);
+      lcd.print(buffer_1);
+      Serial.println("L2");
+      Serial.println(buffer_1);
+      sprintf(buffer_1," ");
+
+      instance_scroll_prev=instance_scroll;
+    }
+
+    if (irrecv.decode(&results)) 
+    {
+      Serial.println("got some ");
+      Serial.println(results.value);
+      delay(100);
+      pressed_bef=pressed;
+      pressed=f_button_pressed();
+
+
+      if (pressed==0)
+        pressed= pressed_bef;
+      else
+      {
+        //scroll check
+        if(pressed==2)
+          instance_scroll++;
+        if(pressed==3)
+          instance_scroll--;
+
+        if (instance_scroll>96)
+          instance_scroll=1;          
+        if (instance_scroll<1)
+          instance_scroll=96;
+
+        //intensity check
+        if ( pressed >=4 && pressed <=5) 
+        {
+          Serial.println("incri decri here ");
+          //increment check  
+          if(pressed==4)
+            auto_inten_var[instance_scroll - 1]++;
+          if(pressed==5)
+            auto_inten_var[instance_scroll - 1]--;          
+
+
+          // checking limits during value change
+          if( auto_inten_var[instance_scroll- 1] > 100 )
+            auto_inten_var[instance_scroll-1]=100;
+          if( auto_inten_var[instance_scroll-1] < 0)
+            auto_inten_var[instance_scroll- 1]=0;
+
+          instance_scroll_prev=0;// need to find why its used- so that the change in value of intensity is displayed
+        }
+
+
+
+        Serial.print("pressed now-");
+        Serial.println(pressed);
+        Serial.print("instance_scroll");
+        Serial.println(instance_scroll);
+      }
+
+
+
+
+      irrecv.resume(); // Receive the next value
+    }
+
+
+  }
+
+
+
+}
+
+
+// 1.3 Manual LED
+// 1.3.1 channel
+// 1.3.1.1 channel intensity
+
+//pressing channel shows indiv channels, after all channels goes off, all come on then
+//up down shows level of that channel
+//menu pressing goes back to auto mode
+//mute to increase decrease sound
+
+//volume button changes vol
+//channel button whole intensity
+
+
+//off button switches off LEDs, not the screen
+void menu_manual()
+{
+  char line1[10]="Channel-1";
+  char line2[10]="Channel-2";
+  char line3[10]="Channel-3";
+  char line4[10]="Channel-4";
+  char line5[12]="All Channel";
+
+  char buffer_1[16];
+
+  byte i;
+  byte instance_scroll=1,instance_scroll_prev=0; 
+  byte pressed=0, pressed_bef=0;
+  byte blink_delay=0;
+  byte blink_now=1;
+  //byte auto_var[6];
+
+  byte manual_inten[4];
+
+  //initialize
+  for (i=0; i<4 ; i++)
+    manual_inten[i]= 0;
+
+
+
+
+
+
+  //all channels on at a time=case 4
+
+
+  // keep scrolling up down for channel level  
+  while(pressed !=7)
+  {
+
+    if(instance_scroll != instance_scroll_prev)
+    {
+      switch (instance_scroll) {
+      case 1:   
+        //1st instance 
+
+        //display line 1 blinking
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          sprintf(buffer_1,"%s:%d",line1,manual_inten[0]);
+        else
+          sprintf(buffer_1," ");
+        lcd.setCursor(0, 0);
+        lcd.print(buffer_1);
+        Serial.println("L1");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+
+        //---set PWM here
+
+        //display line 2 constant
+        sprintf(buffer_1,"%s:%d",line2,manual_inten[1]);
+        lcd.setCursor(0, 1);
+        lcd.print(buffer_1);
+        Serial.println("L2");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+        break;
+
+
+
+
+      case 2:   
+        //1st instance 
+
+        //display line 1 blinking
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          sprintf(buffer_1,"%s:%d",line2,manual_inten[1]);
+        else
+          sprintf(buffer_1," ");
+        Serial.println("L2");
+        Serial.println(buffer_1);
+        lcd.setCursor(0, 0);
+        lcd.print(buffer_1);
+        sprintf(buffer_1," ");
+        //---set PWM here
+
+        //display line 2 constant
+        sprintf(buffer_1,"%s:%d",line3,manual_inten[2]);
+        lcd.setCursor(0, 1);
+        lcd.print(buffer_1);
+        Serial.println("L3");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+        break;
+
+      case 3:   
+        //1st instance 
+
+        //display line 1 blinking
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          sprintf(buffer_1,"%s:%d",line3,manual_inten[2]);
+        else
+          sprintf(buffer_1," ");
+        Serial.println("L3");
+        Serial.println(buffer_1);
+        lcd.setCursor(0, 0);
+        lcd.print(buffer_1);
+        sprintf(buffer_1," ");
+        //---set PWM here
+
+        //display line 2 constant
+        sprintf(buffer_1,"%s:%d",line4,manual_inten[3]);
+        lcd.setCursor(0, 1);
+        lcd.print(buffer_1);
+        Serial.println("L4");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+
+        break;
+
+      case 4:   
+        //1st instance 
+
+        //display line 1 blinking
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          sprintf(buffer_1,"%s:%d",line4,manual_inten[3]);
+        else
+          sprintf(buffer_1," ");
+        //---set PWM here
+
+        lcd.setCursor(0, 0);
+        lcd.print(buffer_1);
+        Serial.println("L4");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+
+        //display line 2 constant
+        sprintf(buffer_1,"%s",line5);
+        lcd.setCursor(0, 1);
+        lcd.print(buffer_1);
+        Serial.println("L1");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+
+        break;
+      case 5:   
+        //1st instance 
+
+        //display line 1 blinking
+        lcd.setCursor(0, 0);
+        if(blink_now ==1)
+          sprintf(buffer_1,"%s",line5);
+        else
+          sprintf(buffer_1," ");
+        //---set PWM here
+
+        lcd.setCursor(0, 0);
+        lcd.print(buffer_1);
+        Serial.println("L4");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+
+        //display line 2 constant
+        sprintf(buffer_1,"%s:%d",line1,manual_inten[0]);
+        lcd.setCursor(0, 1);
+        lcd.print(buffer_1);
+        Serial.println("L1");
+        Serial.println(buffer_1);
+        sprintf(buffer_1," ");
+
+        break;
+
+      }
+      instance_scroll_prev=instance_scroll;
+    }
+
+    if (irrecv.decode(&results)) 
+    {
+      Serial.println("got some ");
+      Serial.println(results.value);
+      delay(100);
+      pressed_bef=pressed;
+      pressed=f_button_pressed();
+
+
+      if (pressed==0)//some junk came in, so let old data be as is, and avoid the else part
+        pressed= pressed_bef;
+      else
+      {
+        //scroll check
+        if(pressed==2)
+          instance_scroll++;
+        if(pressed==3)
+          instance_scroll--;
+
+        if (instance_scroll>5)
+          instance_scroll=1;          
+        if (instance_scroll<1)
+          instance_scroll=5;
+
+
+        //change intensity if right left pressed on same screen
+        //Intensity change 
+        if ( pressed >=4 && pressed <=5) 
+        {
+          Serial.println("incri decri here ");
+          //increment check  
+          if(pressed==4)
+            manual_inten[instance_scroll - 1]=manual_inten[instance_scroll - 1]+10;
+          if(pressed==5)
+            manual_inten[instance_scroll - 1]=manual_inten[instance_scroll - 1]-10;          
+
+
+          // checking limits during value change
+          if( manual_inten[instance_scroll- 1] > 100 )
+            manual_inten[instance_scroll-1]=100;
+          if( manual_inten[instance_scroll-1] < 0)
+            manual_inten[instance_scroll- 1]=0;
+
+          instance_scroll_prev=0;//as there is change in scroll, display from case will occur
+        }     
+
+
+        Serial.print("pressed now-");
+        Serial.println(pressed);
+        Serial.print("instance_scroll");
+        Serial.println(instance_scroll);
+      }
+
+      irrecv.resume(); // Receive the next value
+    }
+
+    //go to next lower menu if menu is pressed again
+    if(pressed == 1)
+      return;// go back to main loop
+
+  }
+
+
+}
+
+
+
+
+
+int f_button_pressed()
+{
+
+  //1-menu
+  //2-ch left
+  //3-ch right
+  //4-vol left
+  //5-vol-right
+  //6-mute
+  //7-pow
+
+
+  switch (results.value) {
+    //Menu
+  case 2104:   
+    results.value=0;
+    return(1);
+    break;
+  case 56:   
+    results.value=0;
+    return(1);
+    break;
+
+    //Channel left
+  case 2080:    
+    results.value=0;
+    return(2);
+    break;
+  case 32:  
+    results.value=0;
+    return(2);
+    break;  
+
+    //Channel right
+  case 2081:    
+    results.value=0;
+    return(3);
+    break;
+  case 33:   
+    results.value=0;
+    return(3);
+    break;
+
+    //Vol left 
+  case 2065:  
+    results.value=0;
+    return(4);
+    break;  
+  case 17: 
+    results.value=0;
+    return(4);
+    break;
+
+    //Vol right
+  case 2064:   
+    results.value=0;
+    return(5);
+    break;
+  case 16:    
+    results.value=0;
+    return(5);
+    break;
+
+    //Mute
+  case 2061:    
+    results.value=0;
+    return(6);
+    break;
+  case 13:    
+    results.value=0;
+    return(6);
+    break;
+
+    //Power
+  case 2060:   
+    results.value=0;
+    return(7);
+    break;
+  case 12:   
+    results.value=0;
+    return(7);
+    break;
+  default:
+    results.value=0;
+    return(0);
+    break;
+  }
+
+
+
+}
+
+
+void setup()
+{
+  Serial.begin(9600);
+  irrecv.enableIRIn(); // Start the receiver
+
+}
+
+void loop() {
+  static  int menu=0, chl,vol,mute,pow, pressed;
+  static byte backlight, backlight_start_time, backlight_duration;  
+  static byte timer_menu;
+
+  if (irrecv.decode(&results)) 
+  {
+    Serial.println(results.value);
+    delay(100);
+    irrecv.resume(); // Receive the next value
+    pressed=f_button_pressed();
+    Serial.println(pressed);
+    if(pressed ==1)//menu
+    {
+      /*while(pressed ==1)
+      {
+        timer_menu++;
+        if (irrecv.decode(&results))
+        {
+        irrecv.resume(); // Receive the next value
+        pressed=f_button_pressed();
+        }
+      }
+      if(timer_menu>30)
+      {
+        Serial.println("Going to manual now");
+        menu_manual();
+      }
+      else
+      {*/
+        // start the light
+        Serial.println("light on now");
+        backlight=1;
+        f_menu();
+        Serial.println("light offing in 5s now");
+        backlight_start_time= (millis()/1000)%10;
+        Serial.println(backlight_start_time);
+      }
+      
+      
+      //pending to do
+      //if (pressed = vol or mute)
+      //show mute or show volume
+
+
+    pressed=0;
+  }
+  // wait for 5sec before switching off the lights
+  if (backlight ==1)
+  {
+    backlight_duration= ((millis()/1000)%10) - backlight_start_time;
+    if(backlight_duration >9)
+    {
+      backlight=0;
+      Serial.println("switching off led");
+      Serial.println((millis()/1000)%10);
+    }
+  }
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
